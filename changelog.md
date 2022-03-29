@@ -1,5 +1,11 @@
 # Mango Program Change Log
 
+## v3.4.2
+Deployed: Mar 19, 2022 at 16:22:04 UTC | Slot: 125,699,230
+1. Increase PriceCache and PerpMarketCache validity by 2x
+2. Upgrade anchor to 0.22.1 and upgrade all other packages
+3. Move interest rate calculation outside of RootBank
+
 ## v3.4.1
 Deployed: Feb 28, 2022 at 15:43:29 UTC | Slot: 122,878,778
 1. Fix div by zero bug in market order sells
