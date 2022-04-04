@@ -17,3 +17,6 @@ mango = "mv3ekLzLbnVPNxjSKvqBpU3ZeZXPQdEC3bp5MDEBG68"
 
 [programs.devnet]
 mango = "4skJ85cdxQAFVKbcGgfun8iZPL7BadVYXG3kGEGkufqA"
+
+[programs.localnet]
+mango = "95vVcA2MzfMGfnH7vUA32VUau3Z9uQ9DCuA2F6gnYGT5"

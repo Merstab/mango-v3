@@ -16,8 +16,10 @@ pub mod msrm_token {
 
 pub mod mngo_token {
     use solana_program::declare_id;
+    #[cfg(feature = "localnet")]
+    declare_id!("Hs1nURtyebVBTDRJmTYB8G4nEs6462DMYg4Gk3De4uUF");
     #[cfg(feature = "devnet")]
     declare_id!("Bb9bsTQa1bGEtQ5KagGkvSHyuLqDWumFUcRqFusFNJWC");
-    #[cfg(not(feature = "devnet"))]
+    #[cfg(feature = "mainnet")]
     declare_id!("MangoCzJ36AjZyKwVj3VnYU4GTonjfVEnJmvvWaxLac");
 }
