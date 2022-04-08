@@ -16,19 +16,17 @@ mkdir target/localnet
 cargo build-bpf --features localnet --bpf-out-dir target/localnet
 
 # localnet.1
-MANGO_PROGRAM_ID="95vVcA2MzfMGfnH7vUA32VUau3Z9uQ9DCuA2F6gnYGT5"
-solana program deploy target/localnet/mango.so --keypair $KEYPAIR --program-id $MANGO_PROGRAM_ID --output json-compact
+# MANGO_PROGRAM_ID="95vVcA2MzfMGfnH7vUA32VUau3Z9uQ9DCuA2F6gnYGT5"
+# solana program deploy target/localnet/mango.so --keypair $KEYPAIR --program-id $MANGO_PROGRAM_ID --output json-compact
 anchor build -p mango_logs
 cp ~/merstab/mango-v3/target/idl/mango_logs.json ~/merstab/mango-client-v3/src/mango_logs.json
-
-#solana program deploy target/devnet/mango.so --keypair $KEYPAIR --output json-compact
+solana program deploy target/localnet/mango.so --keypair $KEYPAIR
 
 # serum dex
-DEX_PROGRAM_ID="DouSNP811YocCyMf3dnJhkrZR44vQQaRQRQLW6iFnXze"
+DEX_PROGRAM_ID="7Sp3ZmRPUAHvS3w4bLhJn6UixVhRqv4UHUFbbVPfu7ZG"
 cd ~/merstab/serum-dex/dex
 anchor build
 solana program deploy target/verifiable/serum_dex.so --keypair $KEYPAIR --program-id $DEX_PROGRAM_ID
-
 # VERSION=v1.7.11
 # sh -c "$(curl -sSfL https://release.solana.com/$VERSION/install)"
 
