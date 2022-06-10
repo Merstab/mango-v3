@@ -1,8 +1,43 @@
 use crate::*;
 use fixed::types::I80F48;
+use fixed_macro::types::I80F48;
 use mango::state::*;
 use solana_program::pubkey::Pubkey;
 use std::collections::HashMap;
+
+// Test equality within an epsilon for I80F48 or float
+#[allow(dead_code)]
+pub const EPSILON: I80F48 = I80F48!(0.001);
+
+#[macro_export]
+macro_rules! assert_approx_eq {
+    ($a:expr, $b:expr) => {{
+        let (a, b) = (&$a, &$b);
+        assert!(
+            (*a - *b).abs() < EPSILON,
+            "assertion failed: `(left !== right)` \
+             (left: `{:?}`, right: `{:?}`, expect diff: `{:?}`, real diff: `{:?}`)",
+            *a,
+            *b,
+            EPSILON,
+            (*a - *b).abs()
+        );
+    }};
+
+    ($a:expr, $b:expr, $eps:expr) => {{
+        let (a, b) = (&$a, &$b);
+        let eps = $eps;
+        assert!(
+            (*a - *b).abs() < eps,
+            "assertion failed: `(left !== right)` \
+             (left: `{:?}`, right: `{:?}`, expect diff: `{:?}`, real diff: `{:?}`)",
+            *a,
+            *b,
+            eps,
+            (*a - *b).abs()
+        );
+    }};
+}
 
 #[allow(dead_code)]
 pub fn assert_deposits(
@@ -30,6 +65,32 @@ pub fn assert_deposits(
 }
 
 #[allow(dead_code)]
+pub fn assert_deposits_approx(
+    mango_group_cookie: &MangoGroupCookie,
+    expected_values: (usize, HashMap<usize, I80F48>),
+    epsilon: I80F48,
+) {
+    let (user_index, expected_value) = expected_values;
+    for (mint_index, expected_deposit) in expected_value.iter() {
+        let actual_deposit = &mango_group_cookie.mango_accounts[user_index]
+            .mango_account
+            .get_native_deposit(
+                &mango_group_cookie.mango_cache.root_bank_cache[*mint_index],
+                *mint_index,
+            )
+            .unwrap();
+        println!(
+            "==\nUser: {}, Mint: {}\nExpected deposit: {}, Actual deposit: {}\n==",
+            user_index,
+            mint_index,
+            expected_deposit.to_string(),
+            actual_deposit.to_string(),
+        );
+        assert_approx_eq!(expected_deposit, actual_deposit, epsilon);
+    }
+}
+
+#[allow(dead_code)]
 pub fn assert_open_spot_orders(
     mango_group_cookie: &MangoGroupCookie,
     user_spot_orders: &Vec<(usize, usize, serum_dex::matching::Side, f64, f64)>,
@@ -51,7 +112,14 @@ pub async fn assert_user_spot_orders(
     let (actual_quote_free, actual_quote_locked, actual_base_free, actual_base_locked) =
         test.get_oo_info(&mango_group_cookie, user_index, mint_index).await;
 
-    println!("User index: {}", user_index);
+    println!(
+        "User index: {} quote_free {} quote_locked {} base_free {} base_locked {}",
+        user_index,
+        actual_quote_free.to_string(),
+        actual_quote_locked.to_string(),
+        actual_base_free.to_string(),
+        actual_base_locked.to_string()
+    );
     if let Some(quote_free) = expected_value.get("quote_free") {
         // println!(
         //     "==\nUser: {}, Mint: {}\nExpected quote_free: {}, Actual quote_free: {}\n==",

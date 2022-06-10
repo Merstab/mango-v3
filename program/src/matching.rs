@@ -335,6 +335,24 @@ pub enum Side {
     Ask = 1,
 }
 
+#[derive(
+    Eq, PartialEq, Copy, Clone, TryFromPrimitive, IntoPrimitive, Debug, Serialize, Deserialize,
+)]
+#[repr(u8)]
+#[serde(into = "u8", try_from = "u8")]
+pub enum ExpiryType {
+    /// Expire at exactly the given block time.
+    ///
+    /// Orders with an expiry in the past are ignored. Expiry more than 255s in the future
+    /// is clamped to 255 seconds.
+    Absolute,
+
+    /// Expire a number of block time seconds in the future.
+    ///
+    /// Must be between 1 and 255.
+    Relative,
+}
+
 pub const MAX_BOOK_NODES: usize = 1024; // NOTE: this cannot be larger than u32::MAX
 
 /// A binary tree on AnyNode::key()
@@ -542,39 +560,6 @@ impl BookSide {
 
     pub fn find_min(&self) -> Option<NodeHandle> {
         self.find_min_max(false)
-    }
-
-    #[cfg(test)]
-    fn to_price_quantity_vec(&self, reverse: bool) -> Vec<(i64, i64)> {
-        let mut pqs = vec![];
-        let mut current: NodeHandle = match self.root() {
-            None => return pqs,
-            Some(node_handle) => node_handle,
-        };
-
-        let left = reverse as usize;
-        let right = !reverse as usize;
-        let mut stack = vec![];
-        loop {
-            let root_contents = self.get(current).unwrap(); // should never fail unless book is already fucked
-            match root_contents.case().unwrap() {
-                NodeRef::Inner(inner) => {
-                    stack.push(inner);
-                    current = inner.children[left];
-                }
-                NodeRef::Leaf(leaf) => {
-                    // if you hit leaf then pop stack and go right
-                    // all inner nodes on stack have already been visited to the left
-                    pqs.push((leaf.price(), leaf.quantity));
-                    match stack.pop() {
-                        None => return pqs,
-                        Some(inner) => {
-                            current = inner.children[right];
-                        }
-                    }
-                }
-            }
-        }
     }
 
     fn find_min_max(&self, find_max: bool) -> Option<NodeHandle> {
@@ -980,6 +965,7 @@ impl<'a> Book<'a> {
         now_ts: u64,
         referrer_mango_account_ai: Option<&AccountInfo>,
         limit: u8,
+        is_luna_market: bool,
     ) -> MangoResult {
         match side {
             Side::Bid => self.new_bid(
@@ -1002,6 +988,7 @@ impl<'a> Book<'a> {
                 now_ts,
                 referrer_mango_account_ai,
                 limit,
+                is_luna_market,
             ),
             Side::Ask => self.new_ask(
                 program_id,
@@ -1039,6 +1026,7 @@ impl<'a> Book<'a> {
         max_quote_quantity: i64, // guaranteed to be greater than zero due to initial check
         order_type: OrderType,
         now_ts: u64,
+        is_luna_market: bool,
     ) -> MangoResult<(i64, i64, i64, i64)> {
         let (mut taker_base, mut taker_quote, mut bids_quantity, asks_quantity) = (0, 0, 0i64, 0);
 
@@ -1059,7 +1047,15 @@ impl<'a> Book<'a> {
         if post_allowed {
             // price limit check computed lazily to save CU on average
             let native_price = market.lot_to_native_price(price);
-            if native_price.checked_div(oracle_price).unwrap() > info.maint_liab_weight {
+
+            // Temporary hard coding LUNA price limit for bid to be below 10c.
+            // This is safe because it's already in reduce only mode
+            if is_luna_market {
+                if native_price >= market.lot_to_native_price(10) {
+                    msg!("Posting on book disallowed due to price limits. Price must be below 10 cents.");
+                    post_allowed = false;
+                }
+            } else if native_price.checked_div(oracle_price).unwrap() > info.maint_liab_weight {
                 msg!("Posting on book disallowed due to price limits");
                 post_allowed = false;
             }
@@ -1186,6 +1182,7 @@ impl<'a> Book<'a> {
         now_ts: u64,
         referrer_mango_account_ai: Option<&AccountInfo>,
         mut limit: u8, // max number of FillEvents allowed; guaranteed to be greater than 0
+        is_luna_market: bool,
     ) -> MangoResult {
         // TODO proper error handling
         // TODO handle the case where we run out of compute (right now just fails)
@@ -1207,7 +1204,15 @@ impl<'a> Book<'a> {
         if post_allowed {
             // price limit check computed lazily to save CU on average
             let native_price = market.lot_to_native_price(price);
-            if native_price.checked_div(oracle_price).unwrap() > info.maint_liab_weight {
+
+            // Temporary hard coding LUNA price limit for bid to be below 10c.
+            // This is safe because it's already in reduce only mode
+            if is_luna_market {
+                if native_price >= market.lot_to_native_price(10) {
+                    msg!("Posting on book disallowed due to price limits. Price must be below 10 cents.");
+                    post_allowed = false;
+                }
+            } else if native_price.checked_div(oracle_price).unwrap() > info.maint_liab_weight {
                 msg!("Posting on book disallowed due to price limits");
                 post_allowed = false;
             }
@@ -1263,6 +1268,11 @@ impl<'a> Book<'a> {
             }
 
             let max_match_by_quote = rem_quote_quantity / best_ask_price;
+            if max_match_by_quote == 0 {
+                // Done matching because we reached max quote quantity
+                post_allowed = false;
+                break;
+            }
             let match_quantity = rem_base_quantity.min(best_ask.quantity).min(max_match_by_quote);
             let done = match_quantity == max_match_by_quote || match_quantity == rem_base_quantity;
 
@@ -1518,6 +1528,11 @@ impl<'a> Book<'a> {
             }
 
             let max_match_by_quote = rem_quote_quantity / best_bid_price;
+            if max_match_by_quote == 0 {
+                // Done matching because we reached max quote quantity
+                post_allowed = false;
+                break;
+            }
             let match_quantity = rem_base_quantity.min(best_bid.quantity).min(max_match_by_quote);
             let done = match_quantity == max_match_by_quote || match_quantity == rem_base_quantity;
 
@@ -2421,6 +2436,7 @@ mod tests {
                     now_ts,
                     None,
                     u8::MAX,
+                    false,
                 )
                 .unwrap();
                 mango_account.orders[0]
